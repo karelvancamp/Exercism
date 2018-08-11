@@ -1,69 +1,62 @@
 NODE, EDGE, ATTR = 0,1,2
 
-class Node(object):
-    def __init__(self, name, attrs={}):
-        
-        if not isinstance(name, str):
-            raise ValueError("Node names should be a string")
-        
+class Schema_object(object):    
+    @classmethod
+    def validate(cls, args):
+        return all(isinstance(arg_,type_) for arg_,type_ in zip(args, cls._schema) if type_)
+
+class Node(Schema_object):
+    _schema = (str, dict)               
+    def __init__(self, name, attrs={}):      
         self.name = name
         self.attrs = attrs
 
     def __eq__(self, other):
         return self.name == other.name and self.attrs == other.attrs
 
-    def __repr__(self):
-        return 'Node({})'.format("'{}'".format(self.name) if not self.attrs else "'{}', {}".format(self.name,self.attrs))
-
-class Edge(object):
+class Edge(Schema_object):
+    _schema = (str,str,dict)
     def __init__(self, src, dst, attrs={}):
-        
-        for x in (src,dst):
-            if not isinstance(x, str):
-                raise ValueError("Node names should be a string")
-        
         self.src = src
         self.dst = dst
         self.attrs = attrs
 
     def __eq__(self, other):
-        return (self.src == other.src and
-                self.dst == other.dst and
-                self.attrs == other.attrs)
+        return self.src == other.src and self.dst == other.dst and self.attrs == other.attrs
 
-
+class Attr(Schema_object):
+    _schema = (str,None)
+    def __init__(self, key, value):
+        self.key_value = (key,value)
+                   
 class Graph(object):
     def __init__(self, data=[]):
         
-        if not isinstance(data, list):
-            raise TypeError("Should be a list of nodes, edges and attributes")
-        
         self.nodes = []
         self.edges = []
-        self.attrs = {}
+        self._attrs = []
         
-        control = {0:(lambda x: Node(*x), self.nodes, 1, 2),
-                   1:(lambda x: Edge(*x), self.edges, 2, 3),
-                   2:(lambda x: self.attributes(*x), self.attrs, 2, 2)
+        control = {0: (Node, self.nodes),
+                   1: (Edge, self.edges),
+                   2: (Attr, self._attrs)
                   }
         
         for x in data:
             
-            if len(x) < 2:
-                raise TypeError("'{}' has not enough arguments")
+            if not isinstance(x, tuple) or len(x) < 2:
+                raise TypeError("'{}' has invalid format".format(x))
             
             if x[0] not in control:
-                raise ValueError("{} is not in (NODE, EDGE, ATTR)".format(x[0]))
+                raise ValueError("'{}' is an unkonwn data type".format(x))
+                
+            cls, container = control[x[0]]
+            args = x[1:]
+
+            if not cls.validate(args):
+                raise ValueError("'{}' has an invalid schema".format(x))
             
-            function, container, min_args, max_args = control[x[0]]
+            container.append(cls(*args))
             
-            if not 0 < len(x[1:]) <= max_args:
-                raise ValueError("To many or few arguments")
-            
-            if isinstance(container, list):
-                container.append(function(x[1:]))               
-            else:
-                function(x[1:])
-            
-    def attributes(self, name, value):
-        self.attrs[name] = value
+    @property
+    def attrs(self):
+        return dict(a.key_value for a in self._attrs)
